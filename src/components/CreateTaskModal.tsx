@@ -1,19 +1,21 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Task, Priority, Status } from '@/lib/types';
 
 interface CreateTaskModalProps {
   open: boolean;
   onClose: () => void;
-  onAdd: (task: Task) => void;
+  onAdd: (task: Task) => Promise<boolean> | boolean;
+  onUpdate: (task: Task) => Promise<boolean> | boolean;
+  task: Task | null;
   projects: string[];
 }
 
 const PRIORITIES: Priority[] = ['Low', 'Medium', 'High', 'Critical'];
 const STATUSES: Status[] = ['Todo', 'In Progress', 'Completed', 'Overdue'];
 
-export default function CreateTaskModal({ open, onClose, onAdd, projects }: CreateTaskModalProps) {
+export default function CreateTaskModal({ open, onClose, onAdd, onUpdate, task, projects }: CreateTaskModalProps) {
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -24,6 +26,36 @@ export default function CreateTaskModal({ open, onClose, onAdd, projects }: Crea
     dueDate: '',
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+
+    if (task) {
+      setForm({
+        title: task.title,
+        description: task.description ?? '',
+        priority: task.priority,
+        status: task.status,
+        project: task.project,
+        assignee: task.assignee,
+        dueDate: task.dueDate,
+      });
+    } else {
+      setForm({
+        title: '',
+        description: '',
+        priority: 'Medium',
+        status: 'Todo',
+        project: projects[0] ?? '',
+        assignee: '',
+        dueDate: '',
+      });
+    }
+
+    setErrors({});
+    setSubmitting(false);
+  }, [open, task, projects]);
 
   if (!open) return null;
 
@@ -35,23 +67,33 @@ export default function CreateTaskModal({ open, onClose, onAdd, projects }: Crea
     return e;
   }
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting) return;
+
     const errs = validate();
     if (Object.keys(errs).length > 0) {
       setErrors(errs);
       return;
     }
-    const newTask: Task = {
-      id: `task-${Date.now()}`,
+
+    const updatedTask: Task = {
+      id: task?.id ?? `task-${Date.now()}`,
       ...form,
-      createdAt: new Date().toISOString().split('T')[0],
+      createdAt: task?.createdAt ?? new Date().toISOString(),
     };
-    onAdd(newTask);
-    // Reset
-    setForm({ title: '', description: '', priority: 'Medium', status: 'Todo', project: projects[0] ?? '', assignee: '', dueDate: '' });
-    setErrors({});
-    onClose();
+
+    setSubmitting(true);
+    try {
+      const saved = task ? await onUpdate(updatedTask) : await onAdd(updatedTask);
+      if (saved === false) return;
+      setErrors({});
+      onClose();
+    } catch {
+      setErrors((prev) => ({ ...prev, submit: 'Something went wrong. Please try again.' }));
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   function handleChange(field: string, value: string) {
@@ -66,6 +108,9 @@ export default function CreateTaskModal({ open, onClose, onAdd, projects }: Crea
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="task-modal-title"
         className="w-full max-w-lg rounded-2xl shadow-2xl flex flex-col max-h-[90vh]"
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border)' }}
       >
@@ -73,11 +118,18 @@ export default function CreateTaskModal({ open, onClose, onAdd, projects }: Crea
         <div className="flex items-center justify-between px-6 py-4 border-b flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
           <div className="flex items-center gap-2">
             <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: 'rgba(59,130,246,0.15)' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 5v14M5 12h14" />
-              </svg>
+              {task ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 20h9" />
+                  <path d="M16.5 3.5a2.12 2.12 0 013 3L8 18l-4 1 1-4Z" />
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+              )}
             </div>
-            <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>Create New Task</h2>
+            <h2 id="task-modal-title" className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{task ? 'Edit Task' : 'Create New Task'}</h2>
           </div>
           <button
             id="modal-close-btn"
@@ -221,13 +273,18 @@ export default function CreateTaskModal({ open, onClose, onAdd, projects }: Crea
             </div>
           </div>
 
+          {errors.submit && (
+            <p role="alert" className="px-6 pb-2 text-sm" style={{ color: 'var(--accent-red)' }}>{errors.submit}</p>
+          )}
+
           {/* Footer buttons */}
           <div className="flex gap-3 px-6 py-4 border-t flex-shrink-0" style={{ borderColor: 'var(--border)' }}>
             <button
               type="button"
               id="modal-cancel-btn"
               onClick={onClose}
-              className="flex-1 py-2.5 rounded-lg text-sm font-medium"
+              disabled={submitting}
+              className="flex-1 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50"
               style={{ background: 'var(--bg-hover)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
             >
               Cancel
@@ -235,10 +292,11 @@ export default function CreateTaskModal({ open, onClose, onAdd, projects }: Crea
             <button
               type="submit"
               id="modal-submit-btn"
-              className="flex-1 py-2.5 rounded-lg text-sm font-semibold text-white"
+              disabled={submitting}
+              className="flex-1 py-2.5 rounded-lg text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }}
             >
-              Create Task
+              {submitting ? (task ? 'Saving...' : 'Creating...') : (task ? 'Save Changes' : 'Create Task')}
             </button>
           </div>
         </form>

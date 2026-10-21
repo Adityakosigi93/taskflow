@@ -1,15 +1,25 @@
+
 @import "tailwindcss";
 
+/* =========================================
+   1. DESIGN TOKENS
+========================================= */
+
 :root {
+  color-scheme: dark;
+
   --bg-primary: #0f1117;
   --bg-secondary: #161b27;
   --bg-card: #1c2333;
   --bg-hover: #232b3e;
+
   --border: #2a3349;
   --border-light: #334060;
+
   --text-primary: #e2e8f0;
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
+
   --accent-blue: #3b82f6;
   --accent-blue-light: #60a5fa;
   --accent-purple: #8b5cf6;
@@ -17,6 +27,19 @@
   --accent-amber: #f59e0b;
   --accent-red: #ef4444;
   --accent-cyan: #06b6d4;
+
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 18px;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.18);
+  --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.18);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.28);
+
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
 }
 
 @theme inline {
@@ -26,44 +49,297 @@
   --font-mono: var(--font-geist-mono);
 }
 
-* {
+/* =========================================
+   2. RESET & BASE
+========================================= */
+
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
-html,
+html {
+  min-height: 100%;
+  scroll-behavior: smooth;
+  scroll-padding-top: 72px;
+  background: var(--bg-primary);
+}
+
 body {
-  height: 100%;
+  min-height: 100vh;
   margin: 0;
   padding: 0;
-}
-
-body {
   background: var(--bg-primary);
   color: var(--text-primary);
-  font-family: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
+  font-family:
+    var(--font-geist-sans),
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+button,
+input,
+textarea,
+select {
+  font: inherit;
 }
+
+button {
+  color: inherit;
+}
+
+button:not(:disabled),
+[role="button"]:not([aria-disabled="true"]) {
+  cursor: pointer;
+}
+
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+img,
+svg {
+  flex-shrink: 0;
+}
+
+img {
+  max-width: 100%;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* =========================================
+   3. CONSISTENT INTERACTIONS
+   Only animate intended properties.
+========================================= */
+
+button,
+a,
+input,
+textarea,
+select,
+[role="button"],
+[role="menuitem"],
+[role="option"] {
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard),
+    opacity var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard);
+}
+
+/* Clear keyboard focus */
+
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent-blue-light);
+  outline-offset: 3px;
+}
+
+/* Avoid double outlines on native controls where supported */
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline-offset: 1px;
+}
+
+/* Button click feedback */
+
+button:not(:disabled):active {
+  transform: scale(0.98);
+}
+
+/* Don't animate disabled buttons */
+
+button:disabled {
+  transform: none;
+}
+
+/* =========================================
+   4. POLISHED FORM CONTROLS
+========================================= */
+
+input,
+textarea,
+select {
+  min-width: 0;
+  color: var(--text-primary);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 1;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent-blue);
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
+}
+
+/* Keep native options readable in dark mode */
+
+select option {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+/* =========================================
+   5. REUSABLE VISUAL UTILITIES
+========================================= */
+
+.tf-surface {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color var(--duration-normal) var(--ease-standard),
+    background-color var(--duration-normal) var(--ease-standard),
+    box-shadow var(--duration-normal) var(--ease-standard),
+    transform var(--duration-normal) var(--ease-standard);
+}
+
+.tf-surface-hover:hover {
+  border-color: var(--border-light);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.tf-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font-weight: 600;
+  transition:
+    color var(--duration-fast) var(--ease-standard),
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard),
+    box-shadow var(--duration-fast) var(--ease-standard),
+    transform var(--duration-fast) var(--ease-standard);
+}
+
+.tf-button:focus-visible {
+  outline: 2px solid var(--accent-blue-light);
+  outline-offset: 3px;
+}
+
+.tf-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
+}
+
+.tf-button-primary {
+  background: linear-gradient(135deg, #3b82f6, #6366f1);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(59, 130, 246, 0.18);
+}
+
+.tf-button-primary:hover:not(:disabled) {
+  box-shadow: 0 6px 18px rgba(59, 130, 246, 0.28);
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.tf-button-secondary {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.tf-button-secondary:hover:not(:disabled) {
+  background: var(--border);
+  border-color: var(--border-light);
+}
+
+.tf-interactive-row {
+  transition:
+    background-color var(--duration-fast) var(--ease-standard),
+    border-color var(--duration-fast) var(--ease-standard);
+}
+
+.tf-interactive-row:hover {
+  background-color: rgba(255, 255, 255, 0.025);
+}
+
+/* =========================================
+   6. SCROLLBARS
+========================================= */
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-light) var(--bg-secondary);
+}
+
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
 ::-webkit-scrollbar-track {
   background: var(--bg-secondary);
 }
+
 ::-webkit-scrollbar-thumb {
   background: var(--border-light);
-  border-radius: 3px;
+  border: 1px solid var(--bg-secondary);
+  border-radius: 999px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
 }
 
-/* Smooth transitions */
-* {
-  transition-property: color, background-color, border-color, opacity;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  transition-duration: 150ms;
+/* =========================================
+   7. SELECTION
+========================================= */
+
+::selection {
+  background: rgba(59, 130, 246, 0.3);
+  color: #fff;
+}
+
+/* =========================================
+   8. ACCESSIBILITY & REDUCED MOTION
+========================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
