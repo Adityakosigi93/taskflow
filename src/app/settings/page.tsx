@@ -1,109 +1,293 @@
+
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Sidebar from '@/components/Sidebar';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import AuthGate from '@/components/AuthGate';
+import Sidebar from '@/components/Sidebar';
+import CreateTaskModal from '@/components/CreateTaskModal';
+import { PriorityBadge, StatusBadge } from '@/components/Badges';
 import { supabase } from '@/lib/supabase';
+import { SAMPLE_PROJECTS } from '@/lib/data';
+import type { Task, Status, Priority } from '@/lib/types';
 
-function SettingsContent() {
-  const router = useRouter();
+const STATUSES: Status[] = ['Todo', 'In Progress', 'Completed', 'Overdue'];
+const PRIORITIES: Priority[] = ['Critical', 'High', 'Medium', 'Low'];
 
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-  const [message, setMessage] = useState('');
+function TasksContent() {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [projects, setProjects] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [projectFilter, setProjectFilter] = useState('All');
+  const [priorityFilter, setPriorityFilter] = useState('All');
+  const [sortBy, setSortBy] = useState('due');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [toast, setToast] = useState('');
 
-  useEffect(() => {
-    let active = true;
+  const notify = (message: string) => {
+    setToast(message);
+    window.setTimeout(() => setToast(''), 3000);
+  };
 
-    async function load() {
-      const { data } = await supabase.auth.getUser();
-
-      if (active) {
-        setEmail(data.user?.email ?? '');
-      }
-
-      const savedTheme = localStorage.getItem('taskflow-theme');
-
-      if (
-        active &&
-        (savedTheme === 'dark' || savedTheme === 'light')
-      ) {
-        setTheme(savedTheme);
-        document.documentElement.dataset.theme = savedTheme;
-      }
-    }
-
-    void load();
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  function changeTheme(value: 'dark' | 'light') {
-    setTheme(value);
-    localStorage.setItem('taskflow-theme', value);
-    document.documentElement.dataset.theme = value;
-    setMessage('Appearance preference saved.');
-    setError('');
-  }
-
-  async function updatePassword(e: React.FormEvent) {
-    e.preventDefault();
-    setMessage('');
+  const loadData = useCallback(async () => {
+    setLoading(true);
     setError('');
 
-    if (password.length < 8) {
-      setError('Use a password with at least 8 characters.');
+    const { data: auth, error: authError } = await supabase.auth.getUser();
+
+    if (authError || !auth.user) {
+      setError('Please sign in again to view your tasks.');
+      setLoading(false);
       return;
     }
 
-    if (password !== confirmPassword) {
-      setError('The passwords do not match.');
+    const { data, error: taskError } = await supabase
+      .from('tasks')
+      .select(
+        'id,title,description,priority,status,project,assignee,due_date,created_at',
+      )
+      .order('created_at', { ascending: false });
+
+    if (taskError) {
+      setError(`Could not load tasks: ${taskError.message}`);
+      setLoading(false);
       return;
     }
 
-    setBusy(true);
+    const loaded: Task[] = (data ?? []).map((r) => ({
+      id: r.id,
+      title: r.title,
+      description: r.description ?? '',
+      priority: r.priority as Priority,
+      status: r.status as Status,
+      project: r.project,
+      assignee: r.assignee,
+      dueDate: r.due_date,
+      createdAt: r.created_at,
+    }));
+
+    setTasks(loaded);
+
+    const key = `taskflow-projects-${auth.user.id}`;
+    let savedNames: string[] = [];
 
     try {
-      const { error: updateError } =
-        await supabase.auth.updateUser({ password });
+      const saved: unknown = JSON.parse(localStorage.getItem(key) ?? '[]');
 
-      if (updateError) throw updateError;
-
-      setPassword('');
-      setConfirmPassword('');
-      setMessage('Password updated successfully.');
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : 'Could not update your password.',
-      );
-    } finally {
-      setBusy(false);
+      if (Array.isArray(saved)) {
+        savedNames = saved
+          .map((p) => (typeof p === 'string' ? p : p?.name))
+          .filter(
+            (p): p is string => typeof p === 'string' && !!p.trim(),
+          );
+      }
+    } catch {
+      savedNames = [];
     }
+
+    setProjects(
+      Array.from(
+        new Set([
+          ...SAMPLE_PROJECTS.map((p) => p.name),
+          ...loaded.map((t) => t.project),
+          ...savedNames,
+        ]),
+      )
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b)),
+    );
+
+    setLoading(false);
+  }, []);
+
+  // Schedule the initial load after the effect runs.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadData();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [loadData]);
+
+  const filteredTasks = useMemo(() => {
+    const q = search.trim().toLowerCase();
+
+    const result = tasks.filter((t) => {
+      const matchesSearch = [
+        t.title,
+        t.description,
+        t.project,
+        t.assignee,
+      ].some((v) => (v ?? '').toLowerCase().includes(q));
+
+      return (
+        matchesSearch &&
+        (statusFilter === 'All' || t.status === statusFilter) &&
+        (projectFilter === 'All' || t.project === projectFilter) &&
+        (priorityFilter === 'All' || t.priority === priorityFilter)
+      );
+    });
+
+    result.sort((a, b) => {
+      if (sortBy === 'priority') {
+        return (
+          PRIORITIES.indexOf(a.priority) -
+          PRIORITIES.indexOf(b.priority)
+        );
+      }
+
+      if (sortBy === 'newest') {
+        return b.createdAt.localeCompare(a.createdAt);
+      }
+
+      if (sortBy === 'title') {
+        return a.title.localeCompare(b.title);
+      }
+
+      return a.dueDate.localeCompare(b.dueDate);
+    });
+
+    return result;
+  }, [tasks, search, statusFilter, projectFilter, priorityFilter, sortBy]);
+
+  async function addTask(task: Task): Promise<boolean> {
+    const { data: auth } = await supabase.auth.getUser();
+
+    if (!auth.user) {
+      setError('Your session has expired. Please sign in again.');
+      return false;
+    }
+
+    const { data, error: saveError } = await supabase
+      .from('tasks')
+      .insert({
+        title: task.title.trim(),
+        description: task.description.trim() || null,
+        priority: task.priority,
+        status: task.status,
+        project: task.project,
+        assignee: task.assignee.trim(),
+        due_date: task.dueDate,
+        user_id: auth.user.id,
+      })
+      .select(
+        'id,title,description,priority,status,project,assignee,due_date,created_at',
+      )
+      .single();
+
+    if (saveError) {
+      setError(`Could not create task: ${saveError.message}`);
+      return false;
+    }
+
+    setTasks((prev) => [
+      {
+        id: data.id,
+        title: data.title,
+        description: data.description ?? '',
+        priority: data.priority as Priority,
+        status: data.status as Status,
+        project: data.project,
+        assignee: data.assignee,
+        dueDate: data.due_date,
+        createdAt: data.created_at,
+      },
+      ...prev,
+    ]);
+
+    notify('Task created successfully.');
+    return true;
   }
 
-  async function signOut() {
-    setBusy(true);
-    setError('');
+  async function updateTask(task: Task): Promise<boolean> {
+    const { data: auth } = await supabase.auth.getUser();
 
-    const { error: signOutError } = await supabase.auth.signOut();
+    if (!auth.user) {
+      setError('Please sign in again.');
+      return false;
+    }
 
-    if (signOutError) {
-      setError(signOutError.message);
-      setBusy(false);
+    const { data, error: saveError } = await supabase
+      .from('tasks')
+      .update({
+        title: task.title.trim(),
+        description: task.description.trim() || null,
+        priority: task.priority,
+        status: task.status,
+        project: task.project,
+        assignee: task.assignee.trim(),
+        due_date: task.dueDate,
+      })
+      .eq('id', task.id)
+      .eq('user_id', auth.user.id)
+      .select(
+        'id,title,description,priority,status,project,assignee,due_date,created_at',
+      )
+      .single();
+
+    if (saveError) {
+      setError(`Could not update task: ${saveError.message}`);
+      return false;
+    }
+
+    const saved: Task = {
+      id: data.id,
+      title: data.title,
+      description: data.description ?? '',
+      priority: data.priority as Priority,
+      status: data.status as Status,
+      project: data.project,
+      assignee: data.assignee,
+      dueDate: data.due_date,
+      createdAt: data.created_at,
+    };
+
+    setTasks((prev) =>
+      prev.map((t) => (t.id === saved.id ? saved : t)),
+    );
+
+    notify('Task updated successfully.');
+    return true;
+  }
+
+  async function deleteTask(task: Task) {
+    if (!window.confirm(`Delete "${task.title}"? This cannot be undone.`)) {
       return;
     }
 
-    router.replace('/');
-    router.refresh();
+    setBusyId(task.id);
+    setError('');
+
+    const { data: auth } = await supabase.auth.getUser();
+
+    if (!auth.user) {
+      setError('Please sign in again.');
+      setBusyId(null);
+      return;
+    }
+
+    const { error: deleteError } = await supabase
+      .from('tasks')
+      .delete()
+      .eq('id', task.id)
+      .eq('user_id', auth.user.id);
+
+    if (deleteError) {
+      setError(`Could not delete task: ${deleteError.message}`);
+    } else {
+      setTasks((prev) => prev.filter((t) => t.id !== task.id));
+      notify('Task deleted.');
+    }
+
+    setBusyId(null);
+  }
+
+  async function changeStatus(task: Task, status: Status) {
+    await updateTask({ ...task, status });
   }
 
   return (
@@ -113,243 +297,366 @@ function SettingsContent() {
     >
       <Sidebar />
 
-      <main className="flex-1 min-w-0 overflow-y-auto pt-14 lg:pt-0">
+      <main className="min-w-0 flex-1 overflow-y-auto pt-14 lg:pt-0">
         <header
-          className="border-b px-6 py-5"
+          className="flex flex-col gap-4 border-b px-6 py-5 sm:flex-row sm:items-center sm:justify-between"
           style={{
             borderColor: 'var(--border)',
             background: 'var(--bg-secondary)',
           }}
         >
-          <h1
-            className="text-xl font-bold"
-            style={{ color: 'var(--text-primary)' }}
-          >
-            Settings
-          </h1>
-
-          <p
-            className="mt-1 text-sm"
-            style={{ color: 'var(--text-muted)' }}
-          >
-            Manage your account and preferences
-          </p>
-        </header>
-
-        <div className="mx-auto max-w-3xl space-y-6 p-6">
-          {message && (
-            <p
-              role="status"
-              className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm text-emerald-400"
-            >
-              {message}
-            </p>
-          )}
-
-          {error && (
-            <p
-              role="alert"
-              className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-400"
-            >
-              {error}
-            </p>
-          )}
-
-          <section
-            className="rounded-2xl border p-6"
-            style={{
-              borderColor: 'var(--border)',
-              background: 'var(--bg-card)',
-            }}
-          >
-            <h2
-              className="text-base font-semibold"
+          <div>
+            <h1
+              className="text-xl font-bold"
               style={{ color: 'var(--text-primary)' }}
             >
-              Account
-            </h2>
-
+              My Tasks
+            </h1>
             <p
               className="mt-1 text-sm"
               style={{ color: 'var(--text-muted)' }}
             >
-              Your currently signed-in account.
+              Manage, organize and track all your tasks.
             </p>
+          </div>
 
-            <label
-              className="mt-5 block text-sm font-medium"
-              style={{ color: 'var(--text-secondary)' }}
-            >
-              Email address
-            </label>
+          <button
+            onClick={() => {
+              setEditingTask(null);
+              setModalOpen(true);
+            }}
+            className="rounded-lg px-4 py-2.5 text-sm font-semibold text-white"
+            style={{ background: 'var(--accent-blue)' }}
+          >
+            + Create Task
+          </button>
+        </header>
 
+        <div className="mx-auto max-w-7xl space-y-5 p-6">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {[
+              { label: 'Total tasks', value: tasks.length },
+              {
+                label: 'To do',
+                value: tasks.filter((t) => t.status === 'Todo').length,
+              },
+              {
+                label: 'In progress',
+                value: tasks.filter((t) => t.status === 'In Progress').length,
+              },
+              {
+                label: 'Completed',
+                value: tasks.filter((t) => t.status === 'Completed').length,
+              },
+            ].map((item) => (
+              <div
+                key={item.label}
+                className="rounded-xl border p-4"
+                style={{
+                  borderColor: 'var(--border)',
+                  background: 'var(--bg-card)',
+                }}
+              >
+                <p
+                  className="text-sm"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  {item.label}
+                </p>
+                <p
+                  className="mt-2 text-2xl font-bold"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  {item.value}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
             <input
-              value={email}
-              readOnly
-              className="mt-2 w-full rounded-lg border px-3 py-2.5 text-sm"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search tasks..."
+              className="rounded-lg border px-3 py-2.5 text-sm"
               style={{
                 borderColor: 'var(--border)',
-                background: 'var(--bg-secondary)',
+                background: 'var(--bg-card)',
                 color: 'var(--text-primary)',
               }}
             />
-          </section>
 
-          <section
-            className="rounded-2xl border p-6"
-            style={{
-              borderColor: 'var(--border)',
-              background: 'var(--bg-card)',
-            }}
-          >
-            <h2
-              className="text-base font-semibold"
-              style={{ color: 'var(--text-primary)' }}
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="rounded-lg border px-3 py-2.5 text-sm"
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+              }}
             >
-              Appearance
-            </h2>
-
-            <p
-              className="mt-1 text-sm"
-              style={{ color: 'var(--text-muted)' }}
-            >
-              Choose your preferred interface theme.
-            </p>
-
-            <div className="mt-4 flex gap-3">
-              {(['dark', 'light'] as const).map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => changeTheme(value)}
-                  aria-pressed={theme === value}
-                  className="rounded-lg border px-4 py-2 text-sm font-medium capitalize"
-                  style={{
-                    borderColor:
-                      theme === value
-                        ? 'var(--accent-blue)'
-                        : 'var(--border)',
-                    background:
-                      theme === value
-                        ? 'rgba(59,130,246,0.12)'
-                        : 'var(--bg-secondary)',
-                    color: 'var(--text-primary)',
-                  }}
-                >
-                  {value}
-                </button>
+              <option value="All">All statuses</option>
+              {STATUSES.map((s) => (
+                <option key={s}>{s}</option>
               ))}
-            </div>
-          </section>
+            </select>
 
-          <section
-            className="rounded-2xl border p-6"
-            style={{
-              borderColor: 'var(--border)',
-              background: 'var(--bg-card)',
-            }}
-          >
-            <h2
-              className="text-base font-semibold"
-              style={{ color: 'var(--text-primary)' }}
+            <select
+              value={projectFilter}
+              onChange={(e) => setProjectFilter(e.target.value)}
+              className="rounded-lg border px-3 py-2.5 text-sm"
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+              }}
             >
-              Change password
-            </h2>
+              <option value="All">All projects</option>
+              {projects.map((p) => (
+                <option key={p}>{p}</option>
+              ))}
+            </select>
 
-            <form onSubmit={updatePassword} className="mt-4 space-y-4">
-              <div>
-                <label
-                  className="mb-2 block text-sm"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  New password
-                </label>
+            <select
+              value={priorityFilter}
+              onChange={(e) => setPriorityFilter(e.target.value)}
+              className="rounded-lg border px-3 py-2.5 text-sm"
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+              }}
+            >
+              <option value="All">All priorities</option>
+              {PRIORITIES.map((p) => (
+                <option key={p}>{p}</option>
+              ))}
+            </select>
 
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  minLength={8}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-lg border px-3 py-2.5 text-sm"
-                  style={{
-                    borderColor: 'var(--border)',
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text-primary)',
-                  }}
-                  required
-                />
-              </div>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="rounded-lg border px-3 py-2.5 text-sm"
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+              }}
+            >
+              <option value="due">Sort: Due date</option>
+              <option value="priority">Sort: Priority</option>
+              <option value="newest">Sort: Newest</option>
+              <option value="title">Sort: Title A–Z</option>
+            </select>
+          </div>
 
-              <div>
-                <label
-                  className="mb-2 block text-sm"
-                  style={{ color: 'var(--text-secondary)' }}
-                >
-                  Confirm new password
-                </label>
-
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  minLength={8}
-                  value={confirmPassword}
-                  onChange={(e) => setConfirmPassword(e.target.value)}
-                  className="w-full rounded-lg border px-3 py-2.5 text-sm"
-                  style={{
-                    borderColor: 'var(--border)',
-                    background: 'var(--bg-secondary)',
-                    color: 'var(--text-primary)',
-                  }}
-                  required
-                />
-              </div>
-
+          {error && (
+            <div
+              role="alert"
+              className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300"
+            >
+              {error}
               <button
-                type="submit"
-                disabled={busy}
-                className="rounded-lg px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-                style={{ background: 'var(--accent-blue)' }}
+                className="ml-3 underline"
+                onClick={() => setError('')}
               >
-                {busy ? 'Updating…' : 'Update password'}
+                Dismiss
               </button>
-            </form>
-          </section>
+            </div>
+          )}
 
-          <section
-            className="rounded-2xl border border-red-500/20 p-6"
-            style={{ background: 'var(--bg-card)' }}
-          >
-            <h2 className="text-base font-semibold text-red-400">
-              Sign out
-            </h2>
+          {toast && (
+            <p role="status" className="text-sm text-emerald-400">
+              {toast}
+            </p>
+          )}
 
+          {loading ? (
             <p
-              className="mt-1 text-sm"
+              className="py-10 text-center"
               style={{ color: 'var(--text-muted)' }}
             >
-              Sign out of your TaskFlow account on this device.
+              Loading tasks…
             </p>
-
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => void signOut()}
-              className="mt-4 rounded-lg border border-red-500/30 px-4 py-2.5 text-sm font-semibold text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+          ) : filteredTasks.length === 0 ? (
+            <div
+              className="rounded-2xl border p-12 text-center"
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--bg-card)',
+              }}
             >
-              {busy ? 'Please wait…' : 'Sign out'}
-            </button>
-          </section>
+              <h2
+                className="font-semibold"
+                style={{ color: 'var(--text-primary)' }}
+              >
+                {tasks.length === 0 ? 'No tasks yet' : 'No matching tasks'}
+              </h2>
+              <p
+                className="mt-2 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                {tasks.length === 0
+                  ? 'Create your first task to get started.'
+                  : 'Try changing your search or filters.'}
+              </p>
+            </div>
+          ) : (
+            <div
+              className="overflow-x-auto rounded-xl border"
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--bg-card)',
+              }}
+            >
+              <table className="w-full min-w-[850px] text-left text-sm">
+                <thead
+                  style={{
+                    background: 'var(--bg-secondary)',
+                    color: 'var(--text-muted)',
+                  }}
+                >
+                  <tr>
+                    <th className="px-4 py-3 font-medium">Task</th>
+                    <th className="px-4 py-3 font-medium">Project</th>
+                    <th className="px-4 py-3 font-medium">Priority</th>
+                    <th className="px-4 py-3 font-medium">Status</th>
+                    <th className="px-4 py-3 font-medium">Due date</th>
+                    <th className="px-4 py-3 font-medium">Assignee</th>
+                    <th className="px-4 py-3 font-medium">Actions</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {filteredTasks.map((task) => (
+                    <tr
+                      key={task.id}
+                      className="border-t"
+                      style={{ borderColor: 'var(--border)' }}
+                    >
+                      <td className="px-4 py-4">
+                        <p
+                          className="font-medium"
+                          style={{ color: 'var(--text-primary)' }}
+                        >
+                          {task.title}
+                        </p>
+                        {task.description && (
+                          <p
+                            className="mt-1 max-w-xs truncate text-xs"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            {task.description}
+                          </p>
+                        )}
+                      </td>
+
+                      <td
+                        className="px-4 py-4"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
+                        {task.project}
+                      </td>
+
+                      <td className="px-4 py-4">
+                        <PriorityBadge priority={task.priority} />
+                      </td>
+
+                      <td className="px-4 py-4">
+                        <select
+                          aria-label={`Status for ${task.title}`}
+                          value={task.status}
+                          disabled={busyId === task.id}
+                          onChange={(e) =>
+                            void changeStatus(
+                              task,
+                              e.target.value as Status,
+                            )
+                          }
+                          className="max-w-36 rounded-lg border px-2 py-1.5 text-xs"
+                          style={{
+                            borderColor: 'var(--border)',
+                            background: 'var(--bg-secondary)',
+                            color: 'var(--text-primary)',
+                          }}
+                        >
+                          {STATUSES.map((s) => (
+                            <option key={s}>{s}</option>
+                          ))}
+                        </select>
+                        <div className="mt-1">
+                          <StatusBadge status={task.status} />
+                        </div>
+                      </td>
+
+                      <td
+                        className="whitespace-nowrap px-4 py-4"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
+                        {task.dueDate
+                          ? new Date(
+                              `${task.dueDate}T00:00:00`,
+                            ).toLocaleDateString()
+                          : '—'}
+                      </td>
+
+                      <td
+                        className="px-4 py-4"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
+                        {task.assignee}
+                      </td>
+
+                      <td className="px-4 py-4">
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              setEditingTask(task);
+                              setModalOpen(true);
+                            }}
+                            className="rounded-md px-2 py-1 text-xs text-blue-400 hover:bg-blue-500/10"
+                          >
+                            Edit
+                          </button>
+
+                          <button
+                            disabled={busyId === task.id}
+                            onClick={() => void deleteTask(task)}
+                            className="rounded-md px-2 py-1 text-xs text-red-400 hover:bg-red-500/10 disabled:opacity-50"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </main>
+
+      <CreateTaskModal
+        open={modalOpen}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingTask(null);
+        }}
+        onAdd={addTask}
+        onUpdate={updateTask}
+        task={editingTask}
+        projects={projects}
+      />
     </div>
   );
 }
 
-export default function SettingsPage() {
+export default function TasksPage() {
   return (
     <AuthGate>
-      <SettingsContent />
+      <TasksContent />
     </AuthGate>
   );
 }

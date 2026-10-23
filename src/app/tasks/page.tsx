@@ -78,26 +78,37 @@ function TasksContent() {
 
       if (Array.isArray(saved)) {
         savedNames = saved
-          .map((p) => typeof p === 'string' ? p : p?.name)
-          .filter((p): p is string => typeof p === 'string' && !!p.trim());
+          .map((p) => (typeof p === 'string' ? p : p?.name))
+          .filter(
+            (p): p is string => typeof p === 'string' && !!p.trim(),
+          );
       }
     } catch {
       savedNames = [];
     }
 
     setProjects(
-      Array.from(new Set([
-        ...SAMPLE_PROJECTS.map((p) => p.name),
-        ...loaded.map((t) => t.project),
-        ...savedNames,
-      ])).filter(Boolean).sort((a, b) => a.localeCompare(b)),
+      Array.from(
+        new Set([
+          ...SAMPLE_PROJECTS.map((p) => p.name),
+          ...loaded.map((t) => t.project),
+          ...savedNames,
+        ]),
+      )
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b)),
     );
 
     setLoading(false);
   }, []);
 
+  // Schedule loading after the effect runs to avoid synchronous state updates.
   useEffect(() => {
-    void loadData();
+    const timer = window.setTimeout(() => {
+      void loadData();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [loadData]);
 
   const filteredTasks = useMemo(() => {
@@ -121,14 +132,20 @@ function TasksContent() {
 
     result.sort((a, b) => {
       if (sortBy === 'priority') {
-        return PRIORITIES.indexOf(a.priority) - PRIORITIES.indexOf(b.priority);
+        return (
+          PRIORITIES.indexOf(a.priority) -
+          PRIORITIES.indexOf(b.priority)
+        );
       }
+
       if (sortBy === 'newest') {
         return b.createdAt.localeCompare(a.createdAt);
       }
+
       if (sortBy === 'title') {
         return a.title.localeCompare(b.title);
       }
+
       return a.dueDate.localeCompare(b.dueDate);
     });
 
@@ -163,17 +180,20 @@ function TasksContent() {
       return false;
     }
 
-    setTasks((prev) => [{
-      id: data.id,
-      title: data.title,
-      description: data.description ?? '',
-      priority: data.priority as Priority,
-      status: data.status as Status,
-      project: data.project,
-      assignee: data.assignee,
-      dueDate: data.due_date,
-      createdAt: data.created_at,
-    }, ...prev]);
+    setTasks((prev) => [
+      {
+        id: data.id,
+        title: data.title,
+        description: data.description ?? '',
+        priority: data.priority as Priority,
+        status: data.status as Status,
+        project: data.project,
+        assignee: data.assignee,
+        dueDate: data.due_date,
+        createdAt: data.created_at,
+      },
+      ...prev,
+    ]);
 
     notify('Task created successfully.');
     return true;
@@ -220,13 +240,18 @@ function TasksContent() {
       createdAt: data.created_at,
     };
 
-    setTasks((prev) => prev.map((t) => t.id === saved.id ? saved : t));
+    setTasks((prev) =>
+      prev.map((t) => (t.id === saved.id ? saved : t)),
+    );
+
     notify('Task updated successfully.');
     return true;
   }
 
   async function deleteTask(task: Task) {
-    if (!window.confirm(`Delete "${task.title}"? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete "${task.title}"? This cannot be undone.`)) {
+      return;
+    }
 
     setBusyId(task.id);
     setError('');
@@ -260,19 +285,31 @@ function TasksContent() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg-primary)' }}>
+    <div
+      className="flex h-screen overflow-hidden"
+      style={{ background: 'var(--bg-primary)' }}
+    >
       <Sidebar />
 
       <main className="min-w-0 flex-1 overflow-y-auto pt-14 lg:pt-0">
         <header
           className="flex flex-col gap-4 border-b px-6 py-5 sm:flex-row sm:items-center sm:justify-between"
-          style={{ borderColor: 'var(--border)', background: 'var(--bg-secondary)' }}
+          style={{
+            borderColor: 'var(--border)',
+            background: 'var(--bg-secondary)',
+          }}
         >
           <div>
-            <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
+            <h1
+              className="text-xl font-bold"
+              style={{ color: 'var(--text-primary)' }}
+            >
               My Tasks
             </h1>
-            <p className="mt-1 text-sm" style={{ color: 'var(--text-muted)' }}>
+            <p
+              className="mt-1 text-sm"
+              style={{ color: 'var(--text-muted)' }}
+            >
               Manage, organize and track all your tasks.
             </p>
           </div>
@@ -293,13 +330,39 @@ function TasksContent() {
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {[
               { label: 'Total tasks', value: tasks.length },
-              { label: 'To do', value: tasks.filter((t) => t.status === 'Todo').length },
-              { label: 'In progress', value: tasks.filter((t) => t.status === 'In Progress').length },
-              { label: 'Completed', value: tasks.filter((t) => t.status === 'Completed').length },
+              {
+                label: 'To do',
+                value: tasks.filter((t) => t.status === 'Todo').length,
+              },
+              {
+                label: 'In progress',
+                value: tasks.filter((t) => t.status === 'In Progress').length,
+              },
+              {
+                label: 'Completed',
+                value: tasks.filter((t) => t.status === 'Completed').length,
+              },
             ].map((item) => (
-              <div key={item.label} className="rounded-xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{item.label}</p>
-                <p className="mt-2 text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>{item.value}</p>
+              <div
+                key={item.label}
+                className="rounded-xl border p-4"
+                style={{
+                  borderColor: 'var(--border)',
+                  background: 'var(--bg-card)',
+                }}
+              >
+                <p
+                  className="text-sm"
+                  style={{ color: 'var(--text-muted)' }}
+                >
+                  {item.label}
+                </p>
+                <p
+                  className="mt-2 text-2xl font-bold"
+                  style={{ color: 'var(--text-primary)' }}
+                >
+                  {item.value}
+                </p>
               </div>
             ))}
           </div>
@@ -310,25 +373,71 @@ function TasksContent() {
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Search tasks..."
               className="rounded-lg border px-3 py-2.5 text-sm"
-              style={{ borderColor: 'var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+              }}
             />
 
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="rounded-lg border px-3 py-2.5 text-sm" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="rounded-lg border px-3 py-2.5 text-sm"
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+              }}
+            >
               <option value="All">All statuses</option>
-              {STATUSES.map((s) => <option key={s}>{s}</option>)}
+              {STATUSES.map((s) => (
+                <option key={s}>{s}</option>
+              ))}
             </select>
 
-            <select value={projectFilter} onChange={(e) => setProjectFilter(e.target.value)} className="rounded-lg border px-3 py-2.5 text-sm" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
+            <select
+              value={projectFilter}
+              onChange={(e) => setProjectFilter(e.target.value)}
+              className="rounded-lg border px-3 py-2.5 text-sm"
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+              }}
+            >
               <option value="All">All projects</option>
-              {projects.map((p) => <option key={p}>{p}</option>)}
+              {projects.map((p) => (
+                <option key={p}>{p}</option>
+              ))}
             </select>
 
-            <select value={priorityFilter} onChange={(e) => setPriorityFilter(e.target.value)} className="rounded-lg border px-3 py-2.5 text-sm" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
+            <select
+              value={priorityFilter}
+              onChange={(e) => setPriorityFilter(e.target.value)}
+              className="rounded-lg border px-3 py-2.5 text-sm"
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+              }}
+            >
               <option value="All">All priorities</option>
-              {PRIORITIES.map((p) => <option key={p}>{p}</option>)}
+              {PRIORITIES.map((p) => (
+                <option key={p}>{p}</option>
+              ))}
             </select>
 
-            <select value={sortBy} onChange={(e) => setSortBy(e.target.value)} className="rounded-lg border px-3 py-2.5 text-sm" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)' }}>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="rounded-lg border px-3 py-2.5 text-sm"
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--bg-card)',
+                color: 'var(--text-primary)',
+              }}
+            >
               <option value="due">Sort: Due date</option>
               <option value="priority">Sort: Priority</option>
               <option value="newest">Sort: Newest</option>
@@ -337,31 +446,71 @@ function TasksContent() {
           </div>
 
           {error && (
-            <div role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
+            <div
+              role="alert"
+              className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300"
+            >
               {error}
-              <button className="ml-3 underline" onClick={() => setError('')}>Dismiss</button>
+              <button
+                className="ml-3 underline"
+                onClick={() => setError('')}
+              >
+                Dismiss
+              </button>
             </div>
           )}
 
           {toast && (
-            <p role="status" className="text-sm text-emerald-400">{toast}</p>
+            <p role="status" className="text-sm text-emerald-400">
+              {toast}
+            </p>
           )}
 
           {loading ? (
-            <p className="py-10 text-center" style={{ color: 'var(--text-muted)' }}>Loading tasks…</p>
+            <p
+              className="py-10 text-center"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              Loading tasks…
+            </p>
           ) : filteredTasks.length === 0 ? (
-            <div className="rounded-2xl border p-12 text-center" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
-              <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+            <div
+              className="rounded-2xl border p-12 text-center"
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--bg-card)',
+              }}
+            >
+              <h2
+                className="font-semibold"
+                style={{ color: 'var(--text-primary)' }}
+              >
                 {tasks.length === 0 ? 'No tasks yet' : 'No matching tasks'}
               </h2>
-              <p className="mt-2 text-sm" style={{ color: 'var(--text-muted)' }}>
-                {tasks.length === 0 ? 'Create your first task to get started.' : 'Try changing your search or filters.'}
+              <p
+                className="mt-2 text-sm"
+                style={{ color: 'var(--text-muted)' }}
+              >
+                {tasks.length === 0
+                  ? 'Create your first task to get started.'
+                  : 'Try changing your search or filters.'}
               </p>
             </div>
           ) : (
-            <div className="overflow-x-auto rounded-xl border" style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}>
+            <div
+              className="overflow-x-auto rounded-xl border"
+              style={{
+                borderColor: 'var(--border)',
+                background: 'var(--bg-card)',
+              }}
+            >
               <table className="w-full min-w-[850px] text-left text-sm">
-                <thead style={{ background: 'var(--bg-secondary)', color: 'var(--text-muted)' }}>
+                <thead
+                  style={{
+                    background: 'var(--bg-secondary)',
+                    color: 'var(--text-muted)',
+                  }}
+                >
                   <tr>
                     <th className="px-4 py-3 font-medium">Task</th>
                     <th className="px-4 py-3 font-medium">Project</th>
@@ -372,32 +521,87 @@ function TasksContent() {
                     <th className="px-4 py-3 font-medium">Actions</th>
                   </tr>
                 </thead>
+
                 <tbody>
                   {filteredTasks.map((task) => (
-                    <tr key={task.id} className="border-t" style={{ borderColor: 'var(--border)' }}>
+                    <tr
+                      key={task.id}
+                      className="border-t"
+                      style={{ borderColor: 'var(--border)' }}
+                    >
                       <td className="px-4 py-4">
-                        <p className="font-medium" style={{ color: 'var(--text-primary)' }}>{task.title}</p>
-                        {task.description && <p className="mt-1 max-w-xs truncate text-xs" style={{ color: 'var(--text-muted)' }}>{task.description}</p>}
+                        <p
+                          className="font-medium"
+                          style={{ color: 'var(--text-primary)' }}
+                        >
+                          {task.title}
+                        </p>
+                        {task.description && (
+                          <p
+                            className="mt-1 max-w-xs truncate text-xs"
+                            style={{ color: 'var(--text-muted)' }}
+                          >
+                            {task.description}
+                          </p>
+                        )}
                       </td>
-                      <td className="px-4 py-4" style={{ color: 'var(--text-secondary)' }}>{task.project}</td>
-                      <td className="px-4 py-4"><PriorityBadge priority={task.priority} /></td>
+
+                      <td
+                        className="px-4 py-4"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
+                        {task.project}
+                      </td>
+
+                      <td className="px-4 py-4">
+                        <PriorityBadge priority={task.priority} />
+                      </td>
+
                       <td className="px-4 py-4">
                         <select
                           aria-label={`Status for ${task.title}`}
                           value={task.status}
                           disabled={busyId === task.id}
-                          onChange={(e) => void changeStatus(task, e.target.value as Status)}
+                          onChange={(e) =>
+                            void changeStatus(
+                              task,
+                              e.target.value as Status,
+                            )
+                          }
                           className="max-w-36 rounded-lg border px-2 py-1.5 text-xs"
-                          style={{ borderColor: 'var(--border)', background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+                          style={{
+                            borderColor: 'var(--border)',
+                            background: 'var(--bg-secondary)',
+                            color: 'var(--text-primary)',
+                          }}
                         >
-                          {STATUSES.map((s) => <option key={s}>{s}</option>)}
+                          {STATUSES.map((s) => (
+                            <option key={s}>{s}</option>
+                          ))}
                         </select>
-                        <div className="mt-1"><StatusBadge status={task.status} /></div>
+                        <div className="mt-1">
+                          <StatusBadge status={task.status} />
+                        </div>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-4" style={{ color: 'var(--text-secondary)' }}>
-                        {task.dueDate ? new Date(`${task.dueDate}T00:00:00`).toLocaleDateString() : '—'}
+
+                      <td
+                        className="whitespace-nowrap px-4 py-4"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
+                        {task.dueDate
+                          ? new Date(
+                              `${task.dueDate}T00:00:00`,
+                            ).toLocaleDateString()
+                          : '—'}
                       </td>
-                      <td className="px-4 py-4" style={{ color: 'var(--text-secondary)' }}>{task.assignee}</td>
+
+                      <td
+                        className="px-4 py-4"
+                        style={{ color: 'var(--text-secondary)' }}
+                      >
+                        {task.assignee}
+                      </td>
+
                       <td className="px-4 py-4">
                         <div className="flex gap-2">
                           <button
@@ -409,6 +613,7 @@ function TasksContent() {
                           >
                             Edit
                           </button>
+
                           <button
                             disabled={busyId === task.id}
                             onClick={() => void deleteTask(task)}

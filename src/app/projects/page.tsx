@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -71,7 +72,6 @@ function ProjectsContent() {
     setTasks(mapped);
 
     const key = `taskflow-projects-${userData.user.id}`;
-
     let saved: Project[] = [];
 
     try {
@@ -104,7 +104,11 @@ function ProjectsContent() {
   }, []);
 
   useEffect(() => {
-    void load();
+    const timer = window.setTimeout(() => {
+      void load();
+    }, 0);
+
+    return () => window.clearTimeout(timer);
   }, [load]);
 
   const persistProjects = async (next: Project[]) => {
@@ -245,7 +249,7 @@ function ProjectsContent() {
         ),
       );
 
-      let next = projects.filter(
+      const next = projects.filter(
         (p) => p.name !== project.name,
       );
 
